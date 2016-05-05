@@ -1,0 +1,1410 @@
+---
+title: "Insgihts on brand in marketing"
+author: "Zhuyun XIAO, Huiru TAO, Yuejia XU"
+date: "2016Äê5ÔÂ2ÈÕ"
+output: html_document
+---
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 1000)
+```
+
+![Brands](iStock_000026751594Small1.jpg)
+
+# Background and motivation
+
+Based on the definition from American Marketing Associations, a brand is a name, term, sign, symbol, design, or a combination of them intended to identify the goods and services of one seller or group of sellers and to differentiate them from those of other seller. 
+
+Because of that economic function brand serves in the mind of the consumer, it is usually viewed as one of the most valuable marketing assets and stands at the core of marketing. Each year, companies spend millions of dollars on promoting better brands by making fascinating logos and launching commercial campaigns. 
+
+The value of the brand comes from its ability to gain an exclusive, positive and prominent meaning in the mind of a large number of customers. For example, a successful branding can promote consumer's loyalty and allow saving of time and energy through identical repurchasing.^1^ Understanding what influence brand perception would help firms perform better on positioning, marketing communication and customer relationship. Furthermore, a good brand would positively influence the word of mouth and in long run increase firms¡¯ profits. 
+
+Fascinated by those values behind brand, our group is interested in getting an in depth understanding of brand in marketing. We would like to explore brand characteristics, figure out association between brand characteristics and products' usage as well as understand how customers assign their regards based on different brand characteristics. 
+
+We hope that by doing this project, we can give suggestions to companies about how to brand more efficiently, which would help them perform better on positioning, marketing communication and customer relationship as well as reduce their expenditures on branding. 
+
+
+# Data description
+
+
+We collected our data from a database^2^ on brand characteristics, through the link provided [here](http://pubsonline.informs.org/doi/suppl/10.1287/mksc.2014.0861). There are two datasets available here and we use both of them in our project.
+
+## First dataset: brand characters measured by 2010
+
+The first dataset file named "Brand_Characteristics_Data_File.xlsx" contains 136 measures of brand characteristics for a cross section of 697 top national U.S. brands across 16 product and service categories measured by 2010. This dataset has three main sources. 
+
+The first data source is the survey conducted by the database developers. The survey measures additional brand characteristics such as brand familiarity, excitement, complexity, visibility, etc. Those data are valuable because respondents were screened to ensure a high level of brand familiarity. Therefore their answers accurately reflect their perception on brand (and minimize the chance of random guessing or inaccurate reports).
+
+The second data source is secondary data. This part collects data from various sources and it contains information on brand's age, brand's category, satisfaction, etc. 
+
+The third compoentns of this dataset is Young and Rubicam's BrandAsset Valuator. In particular, this data set includes information on 629 of the 697 brands and describes the most recent data point that was available at the end of the second quarter of 2010. They measured a broad array of perceptions and attitudes for a large number of brands. Examples of measurement include usage (the percentage of respondents who stated that they use the brand occasionally or often), Brand Personality (such as the extent to which the brand is regarded), Energized_Differentiation (the extent to which the brand is perceived as differentiated from other brands) and brand image (other customer mind-set measures such as "fun", "Glamorous", "healthy", etc. ). 
+
+We summarize 3 data sources and their respective variables in the figure below. 
+
+![Data source and variables](Data_source_and_variables.PNG)
+
+
+Using this data set, we are able to conduct various analysis on brand characteristics, as well as explore the relations between different sets of characteristics and dependent outcomes by2010 Quarter 2.
+
+
+## Second dataset: BAV quarterly data from 2008Q1 to 2010Q2
+
+We also have a second datafile named "disaggregate_BAV_data_total_dataonly.xlsx" (also contained in the zipped data folder).
+
+This dataset includes quarterly information of 2008 Quarter 1 to 2010 Quarter 2. Similar to the third source of our first dataset, it also displays results provided by BAV Consulting group on a broad array of perceptions and attitudes for a large number of brands. However, what makes it different from the first dataset is that it keeps track for each brand for the 10 quarters. This feature of the dataset enables us to detect potential time patterns of various measurements from 2008Q1 to 2010Q2.
+
+
+# Objectives
+
+We have several questions that we want to address in this project.
+
+1. Whether there is a time trend of brand usage?
+
+2. Are customers' perception of a brand associated with brand's characteristics?
+   * If so, which one/more characters have association with customer's perception?
+   * Are the association consistent across different brand categories?
+   
+3. Is there any relationship between the usage of a particular brand and age (absolute age) of that brand?
+   * What about the relationship between usage and newness relative to the product type?
+   * Which one is more associated with usage? Absolute age or relative age?
+   
+4. Among machine learning methods we learnt, which makes the best prediction  for customers' perception?         Which one has the best ability to classify brand into correct categories?
+
+
+# Analysis
+
+## 1. Import, clean and wrangle dataset
+
+We load the first BAV dataset for time trend analysis, since our excel file has multiple sheets, we want to read them in altogether, and combine them.
+
+```{r,message=FALSE,warning=FALSE}
+library(readxl)
+#Define a function to read all sheets
+read_excel_allsheets<-function(filename) {
+    sheets<-readxl::excel_sheets(filename)
+    x<-lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+    names(x)<-sheets
+    x
+}
+
+data<-read_excel_allsheets("disaggregate_BAV_data_total_dataonly.xlsx")
+
+```
+
+The first two worksheets are description rather than quarterly data, so we define a new list with only quareterly data. In addition. We only care about quarterly usage, so we extract this outcome from all excel worksheets.
+
+
+```{r,message=FALSE,warning=FALSE}
+seasondata<-data[3:12]
+quarter<-as.data.frame(lapply(seasondata, function(x) x[,4]))
+#The first three rows do not contain data about usage
+quarter<-quarter[-(1:3),]
+
+```
+
+Since the data are in factor level, we convert them into numeric for further analysis.
+
+```{r,message=FALSE,warning=FALSE}
+indx<-sapply(quarter, is.factor)
+quarter[indx]<-lapply(quarter[indx], function(x) as.numeric(as.character(x)))
+
+```
+
+We also extract brand information, bind quarter usage with brand name and change row names and column names of the timedata data frame.
+
+```{r,message=FALSE,warning=FALSE}
+brand_info<-as.data.frame(seasondata[1])[-(1:3),1:3]
+timedat<-cbind(brand_info,quarter)
+rownames(timedat)<-NULL
+colnames(timedat)[1:3]<-c("brand_id","brand_name","brand_category")
+
+```
+
+There are also some word "case" problems". For example, some are code as "Department Stores", while others are coded as "Department stores", we unify the case in order to perform group-wise analysis later on.
+
+```{r,message=FALSE,warning=FALSE}
+
+timedat$brand_category<-ifelse(timedat$brand_category=="Department Stores","Department stores",timedat$brand_category)
+
+```
+
+Then we load in the other dataset, which most our analysis base on.
+
+```{r,message=FALSE,warning=FALSE}
+library(dplyr)
+library(tidyr)
+#Load
+raw<-readxl::read_excel("Brand_Characteristics_Data_File.xlsx",sheet=2)
+data<-data.frame(raw)
+rownames(data) <-c(-2,-1,0,seq(1,701))
+rowname<-data[rownames(data)==0,]
+finedata<-data[!(rownames(data) %in% c(-2,-1,0,701,700,699,698)), ]
+names(finedata)<-rowname
+
+```
+
+Remove all questions in survey and rename satisfaction and familiarity.
+
+
+```{r,message=FALSE,warning=FALSE}
+#Remove and rename columns
+newdata<-finedata%>%select(`Brand id`:`Satisfaction - ACSI`,Involvement,`Q5: Familiarity given familiarity with the category`,Complexity,Visibility,`Perceived risk`,Excitement,Competence,Total_Users_pct:Regard_MS)%>%rename(Familiarity=`Q5: Familiarity given familiarity with the category`,Satisfaction=`Satisfaction - ACSI`,Perceived_risk=`Perceived risk`, Newness=`Newness relative to the category`)%>%mutate(Internet=as.numeric(Internet),`Interbrand top list`=as.numeric(`Interbrand top list`),`Category  code`=as.numeric(`Category  code`),Newness=as.numeric(Newness),Age=as.numeric(Age))%>%rename(Interbrand_top_list=`Interbrand top list`,CatCode=`Category  code`)
+
+```
+
+Similar to the first dataset, there are some letter case problems that we need to fix for further analysis purpose.
+
+
+```{r,message=FALSE,warning=FALSE}
+#Capital case to small case
+newdata<-newdata%>%mutate(Category=ifelse(Category=="Department Stores","Department stores",Category))
+newdata<-newdata%>%mutate(Category=ifelse(Category=="Household Products (cleaning ingredients etc.)","Household products (cleaning ingredients etc.)",Category))%>%mutate(Premium=ifelse(Premium=="MIddle","Middle",Premium))
+
+```
+
+Our data are not stored in numeric type, we convert our data from character to numeric.
+
+```{r,message=FALSE,warning=FALSE}
+#use lapply to change columns that contain numerics but stored as "character" to "numeric"
+newdata[,-(1:11)]<-lapply(newdata[,-(1:11)],function(x) as.numeric(x))
+
+```
+
+
+##2.Time trend analysis
+
+The second dataset have usage information that has been recorded for two and a half years on a quarterly basis. In real world, some brands' usage has an obvious time pattern, such as long term decline, or regular  fluctuations with time (might be due to seasonal effect). Given the quarterly data, We are interested in detecting whether time has an effect on brand usage. 
+
+Our analysis will be separated into two parts. The first part's analysis is on the overall trend of different categories (average of all brands within a brand category), whereas the second analysis focus more on an individual brand-specific trend.
+
+
+###2.1 Time trend and seasonal effect analysis by category
+
+The motivation of this analysis is that we expect some category such as Food and dining has some specific usage pattern (might be seasonal effect) with respect to time. For example, in Quarter 1, cold winter weather makes people unwilling to dine out, also there are several ice-cream brand in the Food and dining, thus the usage of "food and dining" category should be lower in Quarter 1. Given that usage data from 2008 Quarter 1 to 2010 Quarter 2 are all available to us at the current stage, we are curious about the time trend underlying of usage of different categories. To be specific, the outcome of interest in time trend analysis section is "Usage" (Recorded as Total_Users_pct in the dataset) and the covariate of interest is time.
+
+We calculate the mean usage for each category in each quarter (summarize mean by brand_category).
+
+
+```{r,message=FALSE,warning=FALSE}
+mean_dat<-timedat%>%group_by(brand_category)%>%summarize(t0=mean(X2008Q1,na.rm=TRUE),t1=mean(X2008Q2,na.rm=TRUE),t2=mean(X2008Q3,na.rm=TRUE),t3=mean(X2008Q4,na.rm=TRUE),t4=mean(X2009Q1,na.rm=TRUE),t5=mean(X2009Q2,na.rm=TRUE),t6=mean(X2009Q3,na.rm=TRUE),t7=mean(X2009Q4,na.rm=TRUE),t8=mean(X2010Q1,na.rm=TRUE),t9=mean(X2010Q2,na.rm=TRUE))
+
+```
+
+Then, we make plots to show the trend of those average usage of "all brands within each category" with time.
+
+```{r,fig.width=12,fig.height=12,message=FALSE,warning=FALSE}
+#We make the mean data from wide format to long format by the "gather" function
+mean_dat_long<-mean_dat%>%gather(time,mean_usage,-brand_category)
+
+#We create a new column that indicates quarter 1 for later plotting annotation purpose
+mean_dat_quarter_info<-mean_dat_long%>%mutate(Q=ifelse(time=="t0"|time=="t4"|time=="t8","1",NA) )
+
+#In order to make the "Quarter" easily seen, we annotate points from Quarter 1, we do not annotate all the points, since the trend is quite flat, and annotating all points make it messy. 
+library(ggplot2)
+mean_dat_quarter_info%>%
+  ggplot(aes(x=time,y=mean_usage,color=brand_category))+
+  ggtitle("Time trend of usage")+
+  ylab("Usage")+
+  geom_point()+
+  geom_smooth()+
+  geom_text(data=subset(mean_dat_quarter_info,time=="t0"|time=="t4"|time=="t8"),aes(label=Q),vjust=0,hjust=0)+
+  facet_wrap(~brand_category)
+
+```
+
+
+Data points which has an "1" beside it indicates that this data is "Quarter 1" usage, thus the three subsequent data points represent Quarter 2, Quarter 3 and Quarter 4, respectively. 
+
+
+Surprisingly, the time trend is not as obvious as we expected before performing this analysis. For example, the "Food and dining category" even has the highest usage among 4 quarters in each year (We thought it should be lowest among four quarters). We guess the reason underlying this is that among all brands belonging to category "Food and dining", there might be some brand such as "hot-pot", which has a high "usage" in winter season. Since when we are plotting using the average across each brand category, the brand effect within each brand category may balance out each other (some brands in "Food and dining" category has very high usage in Quarter 1, such as hotpot, while others has a very low usage in Quarter 1, such as ice cream). This might be one reason for the counter-intuitive fact. 
+
+
+
+###2.2 Time trend and seasonal effects analysis within category
+
+Besides interested in the time pattern of the average usage in each category, we are also interested in the time trend of different brand within a specific brand category. For example, there are many brands (51) within the "Clothing products" category. We want to explore the difference in time trend of different clothing brand. Our group picks up 4 brands that we like best and compare by drawing the line plot on the same graph. In particular, we use "dygraphs" package to make the plot more interactive. In the figure we create below, you can select the brand of your interest by putting the mouse on that particular series, and the series will be highlighted. You can also move your mouse along a particular series and the individual values at different time point will be displayed. In addition, you can use the range selector at the bottom of the graph to pan and zoom the region of interest. (Note: X axis label indicates the starting month of a quarter)
+
+
+```{r,fig.width=8,message=FALSE,warning=FALSE}
+
+library(xts)
+#"xts" function requires each row indicate a time point, however, each column of the "quarter" data represent time point, so we need to transpose and transform the transposed matrix into data frame
+transquarter<-as.data.frame(t(quarter))
+#Each row name has the form "Xyearquarter", we need to remove the initial "X" in order to convert to the data type that xts can recognize
+rownames(transquarter)<-sapply(rownames(transquarter), function(x) substring(x,2))
+#Put the row names of the data as the first column of this dataset,since xts cannot be applied to rownames
+transquarter<-add_rownames(transquarter, "quarter")
+#Convert the time indicator to a recognizable format
+transquarter$quarter<-as.yearqtr(transquarter$quarter)
+#Transform our dataset to "xts" format for further plotting purpose
+xtsdata<-xts(transquarter[,-1], transquarter$quarter)
+#Select 4 clothing brand that we are interested in: A&F, American Eagle, Ann Taylor and Banana Republic
+A_F<-xtsdata[,7]
+American_Eagle<-xtsdata[,29]
+Ann_Talyor<-xtsdata[,36]
+Banana<-xtsdata[,60]
+#bind them and used the binded object as the data object for plotting
+interestdata<-cbind(A_F,American_Eagle,Ann_Talyor,Banana)
+
+#Make a dynamic graph by dygraph
+library(dygraphs)
+dygraph(interestdata,main="Usage of 4 clothing brands")%>% 
+  dySeries("X10", label = "A&F") %>%
+  dySeries("X32", label = "American Eagle") %>%
+  dySeries("X39", label = "Ann Talyor") %>%
+  dySeries("X63", label = "Banana Republic")%>%
+  dyRangeSelector(height = 20)%>%
+  dyOptions(colors = RColorBrewer::brewer.pal(4, "Set1"))%>%
+  dyHighlight(highlightCircleSize = 5, 
+              highlightSeriesBackgroundAlpha = 0.2,
+              hideOnMouseOut = FALSE,
+              highlightSeriesOpts = list(strokeWidth = 3))
+
+
+```
+
+
+This plot is quite informative. We find that Banana Republic and American Eagle have higher usage than Ann Talyor and A&F most of the time. In terms of the time trend pattern, American Eagle and A&F display similar trend, the fluctuations are quite large, especially in 4 quarters of 2008. The lowest usage occurred in 3rd quarter of 2008 for American Eagle (Blue), whereas that of A&F (Red) occur in the first quarter of 2009. Usage of Banana Republic also fluctuate widely. The trend is similar to American Eagles in the first three quarters. Then, its trend becomes opposite to American Eagles' from 4th quarter in 2008 to 2nd quarter in 2009 (American Eagle: decrease then increase; Banana Republic: increase then decrease). In 2010 Quarter 1 and Quarter 2, again, they have opposite patterns. (American Eagles increase from Q1 to Q2, while Banana Republic decrease from Q1 to Q2). The time pattern of Ann Tylor is quite different from the other 3 brands, it is relatively steady starting from 2009 Q1, despite a slight drop in 2009 Q3. 
+
+
+###2.3 Some comments on time trend and seasonal effects analysis
+
+We are trying to address Objective 1 in the time trend analysis above and we are able to get some feeling after visualizing the data. However, we are not able to provide a highly convincing answer at this stage, since in our dataset, the "follow-up period" is not long enough. So we are not able to determine a long-term trend of a very obvious and consistent seasonal effect based on available data. We definitely need more data to formally do a time series analysis.
+
+********
+
+Then, we are going to move to the other dataset, which contains not only the BAV data, but also more product characteristics (but only recorded at a single time point) from a new survey and other secondary data source. By analyzing this dataset, we are able to extend the breadth of our analysis.
+
+##3. Visually explore the dataset
+
+###3.1 Brand Category
+In total we have 697 brands, and each brand falls into a category. We want to have an overall feeling of how many brands are contained in each brand category before filtering out.
+
+```{r,message=FALSE,warning=FALSE}
+
+table(newdata$Category)
+
+```
+
+###3.2 Regard_MS (Primary outcome of interest)
+Rgard_MS is the value related to how highly consumer think of a brand. It measures consumers' perception of a brand and ranges between 1-7, where 1 means low regards while 7 means high regards.
+
+In our dataset, there are some NAs and a "0" entry in the Rgard_MS column. For NAs, they might be due to the fact that we are unable to measure "Reagrd_MS"  for these brands, or some information of Rgard_MS are missing, so that it is not possible to interpolate those NAs. In addition, the "0" entry corresponds to the brand "Lean Cuisine", we believe this is an data entry error, since when we check back the other excel data set file which contains the quarterly "Rgard_MS" information, we find that "Rgard_MS" value is not zero in any of the quarter, which confirms our belief that this is an data entry error. For the exploratory data analysis and data visualization purpose, we temporarily filter out brands with "NA" and "0" Rgard_MS. In the later part (Machine learning analysis), we also impute these values for prediction purpose. 
+
+```{r,message=FALSE,warning=FALSE,message=FALSE}
+
+tmp<-newdata%>%select(Regard_MS,Involvement:Competence,Category)%>%filter(Regard_MS!=0)
+
+```
+
+####3.2.1 Boxplot of Regard_MS by category:
+Our main interest of outcome is Rgard_MS, which represents customer's perspective on a brand. We want to see the distribution of Rgard_MS within each brand category by making Boxplot of Rgard_MS by category.
+
+```{r,fig.width=12,warning=FALSE,message=FALSE}
+
+tmp%>%select(Regard_MS,Category)%>%
+ggplot(aes(Category,y=Regard_MS,fill=Category))+geom_boxplot()+
+theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+ggtitle("Boxplot of Regard_MS by Category")
+
+```
+
+The distribution of Rgard_MS within each brand category and comparisons across categories are quite straightforward from the boxplot above. Some are condensed (Sports and hobbies), while some are very spread (Beverages, Health Products and Services, Media and entertainment). This implies consumer perception (Regard_MS) of different brand within Sport and hobbies are very close, whereas the variation of consumer perception is quite large within each of the other three categories (Beverages, Health Products and Services, Media and entertainment). Also, we can see the distribution of different category varies a lot. For example, it seems that all brands in department stores category have higher consumer perception than any brand within financial services category. 
+
+####3.2.2 Scatter plot of mean of regard_MS in each category (point size is the count of that category)
+
+```{r,fig.width=12,warning=FALSE,message=FALSE}
+# We deliberately hide the legend of this plot, beca
+tmp%>%group_by(Category)%>%
+  summarize(Regard=mean(Regard_MS),count=n())%>%
+  ggplot(aes(x=Category,y=Regard,color=Category))+geom_point(aes(size=count))+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  ggtitle("Scatter plot of mean Regard_MS by Category")
+
+```
+
+In this plot, this size of each point represent the number of brand within that category, this plot gives us an intuitive feeling that the Customer perception of a brand category is not highly correlated with the number of brands in this category. We have learnt in a marketing course before that as the number of brands within a brand category increases, consumer's perception of this category in general gets higher due to the competition effect. (Brands tend to improve their service to win the competition, thus the overall quality of service improves in that specific category). However, what we observe seem to be contradictory to that theory. We do not find relationship between the Regard and the point size. 
+
+####3.2.3 Density plot of regard_MS in different categories
+
+```{r,fig.width=12,warning=FALSE,message=FALSE}
+
+tmp%>%
+select(Regard_MS,Category)%>%
+filter(Category%in%c("Food and dining","Media and entertainment","Cars","Technology products and stores"))%>%
+ggplot(aes(x=Regard_MS))+geom_density(aes(fill=Category),alpha=0.3)+
+ggtitle("Density plot of Regard_MS by Category")
+
+```
+
+We see from the plot above that distributions of Regard_MS are different in different categories. Distribution in Food and dining category is slightly left skewed, whereas that of cars are approximately bell-shaped. 
+ 
+ 
+###3.3 Total_Users_pct (Secondary outcome of interest)
+Total Users pct is the value related to how often consumer would purchase or use the brand. It measures consumers' usage of a brand. The higher the score in Total Users pct, the higher the usage of a brand. 
+
+####3.3.1 Boxplot of Usage 
+
+```{r,warning=FALSE,message=FALSE,fig.width=12}
+
+newdata%>%select(Total_Users_pct,Category)%>%
+ggplot(aes(Category,y=Total_Users_pct,fill=Category))+geom_boxplot()+
+theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+ggtitle("Boxplot of Usage by Category")
+
+```
+
+We can see that usage vary even more across categories compared to Regard_MS. Therefore, we should always keep this in mind in further analysis: The brand category might be a confounder when investigating relationship between usage and other variables of interest. 
+
+
+
+
+####3.3.2 Relationship between Usage and consumer's perception
+
+```{r,warning=FALSE,message=FALSE,fig.width=12}
+
+newdata%>%select(Total_Users_pct,Category,Regard_MS)%>%
+filter(Regard_MS!=0)%>%
+ggplot(aes(x=Regard_MS,y=Total_Users_pct,color=Category))+geom_point()+
+theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+ggtitle("Usage vs. Regard")
+
+```
+
+As we expect, normally, if customer's perception of a brand is higher, then the brand' s usage is also higher.
+This plot confirms us with that. We can also see from the colored points that some brand category follows the upward linear pattern well, while some do not have a very clear linear pattern for Usage and Regards such as cars. This is an explainable phenonmenon. We know that some car brands have a great perceptions, however, many people still won't buy that due to the high price.  
+
+###3.4 Correlation among selected features (Heatmap)
+
+After viewing features of this dataset, we think some of them sound like highly correlated, so we select some features of our interest to check the correlation. These features include: age, newness relative to the category, satisfaction, involvement, familiarity, complexity, visibility, perceived risk, excitement, competence, usage, consideration, energized differentiation, relevance, esteem, knowledge, statue, strength and overall asset.
+
+
+```{r,fig.width=12,warning=FALSE,message=FALSE}
+cordata<-newdata%>%select(Age:Newness,Satisfaction:Brand_Asset_C)
+#Calculate correlation
+cormat<-round(cor(cordata,use = "complete.obs"),2)
+library(reshape2)
+melted_cormat <- melt(cormat)
+#Draw the heatmap
+ggplot(data = melted_cormat,aes(x=Var1, y=Var2, fill=value))+
+   geom_tile()+theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+   ggtitle("Heatmap of covariates of interest")
+
+```
+
+This heatmap can only give us a rough idea of the correlation between selected features. But we notice that there are some relative large correlations.
+
+
+
+
+##4. Regression analysis on the primary outcome (Regard_MS)
+
+We are concerned about the relationship between consumers' perception and brand characteristics. In our dataset, we think "Regard_MS" serves as an appropriate measure of consumer¡¯s perception, so in the following, we use value of ¡°Regard_MS¡± to represent consumer¡¯s perception of a brand. 
+
+Moreover, as we have mentioned before, our data contains a huge number of features from three different source (BAV data, survey data and secondary data). In order to analyze feature from different resource without being affected by the confounding effect of data source, we decide to do stratified analysis by data source. That means, we do three separate regression analysis based on covariates from each data source. We are not able to model all features containing in a specific data source, we only select some features of our interest for analysis purpose.
+
+###4.1 Regression model based on survey data
+
+```{r,message=FALSE,warning=FALSE,fig.width=12}
+plotdata<-tmp%>%gather("Feature","score",3:8)
+plotdata%>%ggplot( aes(score, Regard_MS)) +
+  geom_point(cex=2,aes(color=Category))+facet_wrap(~Feature,scales = "free_x")+
+  geom_smooth(method="lm")+
+  ggtitle("Univariate plots of Regard_MS vs. Costomer perspective Features") 
+
+```
+
+We see from the plot above that customer perception (Rgard_MS) seems to be associated with many features that we plotted above. Moreover, the figure also gives us a feeling that regard MS and some features are separated by category. Thus, we are interested in analyzing by category and find within each category, what is the best regression model using survey data. 
+
+Since in some categories does not contain many data points, we only consider those categories which contain more than 50 data points in it to fit a regression (the small sample results are not very reliable, so we only focus on large sample here). Those six categories are beauty product, beverages, clothing products, food and dining, media and entertainment, and Technology products and stores.
+
+In terms of model selection, the methods we are using here is backward selection based on 0.05 confidence level excluding criteria. The following is an example of how we did the model selection in beauty product category. (We are performing backward selection). Here in order to be clearer, we are showing the backward selection step by step rather than using the automatic selection function in R. 
+
+####4.1.1 Beauty product
+
+```{r,message=FALSE,warning=FALSE}
+#Beauty products
+library(broom)
+fit_Beauty_regard_1<-tmp%>%
+  filter(Category=="Beauty products")%>%
+  lm(Regard_MS~ Familiarity + Complexity + Visibility + Perceived_risk + Competence + Excitement,data=.)
+tidy(fit_Beauty_regard_1)
+
+```
+
+Notice that the perceived risk is the least significant one and its P-value > 0.05. Therefore we exclude it from our model and fit a new model. 
+
+```{r,message=FALSE,warning=FALSE}
+#second model without perceived risk
+fit_Beauty_regard_2<-tmp%>%
+  filter(Category=="Beauty products")%>%
+  lm(Regard_MS~ Familiarity + Complexity + Visibility + Competence + Excitement,data=.)
+
+tidy(fit_Beauty_regard_2)
+
+```
+
+Now complexity is the least statistically significant one with P-value > 0.05. Hence, we exclude it from our model and fit a new model. 
+
+```{r,message=FALSE,warning=FALSE}
+#third model without perceived risk and complexity
+fit_Beauty_regard_3<-tmp%>%
+  filter(Category=="Beauty products")%>%
+  lm(Regard_MS~ Familiarity + Competence + Visibility + Excitement,data=.)
+
+tidy(fit_Beauty_regard_3)
+
+```
+
+Now since all the covariates have p-value smaller than 0.05, the backward selection stops here. Hence for beauty product, the most influential brand characteristics are familiarity, visibility, competence, and excitement. The coefficient estimates of our final model is shown below
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+library(knitr)
+kable(summary(fit_Beauty_regard_3)$coef, digits=4)
+
+```
+
+
+The progress of model selection for other five categories are very similar. Therefore I am not repetitively list the code here. Instead, I present a table which summarize the model selection result below. (Only show the code for final model for the listing purpose).
+
+####4.1.2 Beverages
+
+
+```{r,echo=FALSE}
+
+fit_Beverage_regard<-tmp%>%
+  filter(Category=="Beverages")%>%
+  lm(Regard_MS~ Familiarity + Complexity + Visibility + Competence,data=.)
+
+kable(summary(fit_Beverage_regard)$coef, digits=4)
+
+```
+
+
+####4.1.3 Clothing products
+
+
+```{r,echo=FALSE}
+fit_Clothing_regard<-tmp%>%
+  filter(Category=="Clothing products")%>%
+  lm(Regard_MS~ Familiarity + Excitement + Competence,data=.)
+
+kable(summary(fit_Clothing_regard)$coef, digits=4)
+
+```
+
+####4.1.4 Food and dining
+
+
+```{r,echo=FALSE}
+fit_Dining_regard<-tmp%>%
+  filter(Category=="Food and dining")%>%
+  lm(Regard_MS~ Familiarity +Perceived_risk+Excitement + Competence,data=.)
+
+kable(summary(fit_Dining_regard)$coef, digits=4)
+
+```
+
+####4.1.5 Media and entertainment
+
+
+```{r,echo=FALSE}
+fit_Media_regard<-tmp%>%
+  filter(Category=="Media and entertainment")%>%
+  lm(Regard_MS~ Familiarity +Perceived_risk+Excitement + Competence,data=.)
+
+kable(summary(fit_Media_regard)$coef, digits=4)
+
+```
+
+####4.1.6 Technology products and stores
+
+
+```{r,echo=FALSE}
+fit_Tech_regard<-tmp%>%
+  filter(Category=="Technology products and stores")%>%
+  lm(Regard_MS~ Familiarity +Visibility + Competence,data=.)
+
+kable(summary(fit_Tech_regard)$coef, digits=4)
+
+```
+
+Notice the influential brands characteristics are different for different categories. Brands in those categories can use marketing strategies to reinforce or weaken different characteristics based on our regression result. Using Food and dining category as an example, food and dining companies can consider using strategies to improve familiarity and competence characteristics, and decrease perceived risk and excitement characteristic in their brand.
+
+Also notice that familiarity appears to be an important brand characteristics associated with consumer regards in all those six categories. The positive sign for the estimates for familiarity implies the more a consumer familiarized with a brand, the higher regard a consumer would give to that brand. This is a result of mere exposure effect. Mere exposure effect is a psychological phenomenon by which people tend to develop a preference for things merely because they are familiar with them. The insights we got from our results is that in order to receive higher regards, we can try to merely expose our brand to consumers. 
+
+There are two marketing strategies that we suggest to increase mere exposure of a brand. The inferior exposure strategies includes making billboards or advertising through radio, which can visually or auditorily expose the brand to consumers. The superior exposure strategies may include opening flagship stores, which may not only visually or auditorily expose the brands, but also provide a way for consumer to actually interact with brands and products. Advantage of choosing inferior exposure strategies over superior strategies is that they cost less. On the other hand, the disadvantage of choosing inferior exposure strategies over superior strategies is that they don't require enough cognitive involvement on consumer, which would result lower efficiency of mere exposure.
+
+
+###4.2 Regression model based on brand's image (BAV data source brand image)
+
+As stated in the objective, we are interested in whether or not and how attributes under "Brand image" are associated with Rgard_MS. 
+
+Before moving on, let us first recall how values of brand image's 40 attributes were calculated:
+
+Respondents were asked to check whether they can associate a brand with 40 attributes,such as arrogant, authentic, friendly, etc. For each item,
+the the percentage of respondents who checked this attribute with respect to the brand was calculated. In the end, this value is taken as the score of 
+that certain attribute of the item.^2^
+
+We first wrangle the data to extract those 40 attributes and Regard_MS.
+
+```{r,warning=FALSE,message=FALSE}
+
+brand_image<-newdata%>%
+  select(Arrogant_pct:Worth_More_pct,Regard_MS,Category)%>%
+  filter(!is.na(Regard_MS),Regard_MS!=0)
+
+```
+
+####4.2.1 Select features based on the paper's suggestion
+
+To assess the role of these other brand perceptions, Mizik and Jacobson^3^ undertook factor analysis of first differences in these 40 brand image attributes. Working with first differences, they are able to remove common brandwide correlation across attributes and allows for a clearer interpretation of the factors. They made use of principal components analysis and a Varimax rotation, and find eight factors with eigenvalues greater than 1.00. Because here we are more focused on the interpretation and model building aspect, we will not re-produce the PCA steps. Instead, we base our further analysis on the grouping results of this paper. What they obtained is a table summarizing factor analysis solution. They group brand_image variables into 8 subcategories based on the 8 most important principle component. The categorization result is shown in the table below.
+
+
+![Results after PCA](Paper.png)
+
+What we are going to do next is regressing the outcome "Rgard_MS" on these 8 factors newly created vectors. Note that these 8 factors are not originally in our dataset, and we need to impute their value. The approach that we are going to take here is to impose equal weight on each attribute within a factor category (it is fair to weigh each attribute equally), which is equivalent to calculating the average value of attributes within a specific factor (e.g. The value of factor 8: "Haughty" is the mean of "Arrogant pct" and "unapproachable pct"). 
+
+```{r,warning=FALSE,message=FALSE}
+#Impute value of 8 factors and select columns of these 8 factors together with the outcome variable (Reagrd_MS) and Category 
+
+factor_data<-brand_image%>%
+  mutate(Virtuous=(Trustworthy_pct+Cares_Customers_pct+High_Performance_pct)/3,
+         Personable=(Kind_pct+Charming_pct+Fun_pct)/3,
+         Classic=(Traditional_pct+Original_pct+Authentic_pct)/3,
+         Basic=(Good_Value_pct+Simple_pct+Down_to_Earth_pct)/3,
+         Sophisticated=(Stylish_pct+Upper_Class_pct+Glamorous_pct)/3,
+         Hip=(Trendy_pct+Gaining_In_Popularity_pct)/2,
+         Durable=Rugged_pct,
+         Haughty=(Arrogant_pct+Unapproachable_pct)/2)%>%
+  select(Regard_MS,Category,Virtuous,Personable,Classic,Basic,Sophisticated,Hip,Durable,Haughty)
+
+```
+
+Then we do a multiple regression based on this 8 factors. Before this, we can first check the correlation among our covariates of interest.
+
+####4.2.2 Correlation of covariates
+
+
+```{r,warning=FALSE,message=FALSE,fig.width=12}
+library(gclus)
+only_feature<-factor_data%>%select(-Regard_MS,-Category)
+obs<-abs(cor(only_feature))
+col<-dmat.color(obs)
+order<-order.single(cor(only_feature))
+cpairs(only_feature,order,panel.colors = col,pch=".",gap=0.5,main="Covariates Ordered and Colored by Correlation")
+
+```
+
+In the plot above, relative magnitude of correlation is shown by the darkness of the color. The darker parts (pink) indicate a larger correlation, while the lighter part indicates a lower correlation (yellow). This plot gives us a brief feeling of the relative magnitude of correlation between covariates based on color separation. However, this plot does not explicitly show the absolute magnitude of pair correlation.
+
+Other R packages such as corrplot can give us a correlation plot with absolute correlation values. 
+
+
+```{r,warning=FALSE,message=FALSE,fig.width=12}
+library(corrplot)
+corrplot(cor(only_feature), method="color",  
+         type="lower", order="hclust", 
+         addCoef.col = "black",  tl.srt=45,
+         tl.col="red",
+         diag=FALSE)
+
+
+```
+
+
+
+The gradient reference line on the right indicates the magnitude of correlation. Also, since the value of correlation is shown on the figure directly, we are able to identify whether covariates are highly correlated. The largest correlation is 0.59, which is not that large. We can safely move forward without worrying to much about the multicollinearity problem when we do multiple regression later on (Even though formally, in order to identify multicolinearity, we need to check VIF). This makes sense, since our variable of interest are a measure of first 8 principle components, we don't expect them to be highly correlated in general. 
+
+####4.2.3 Fit multiple linear regression model
+
+#####4.2.3.1 Variable selection based on significance of covariate (backward)
+
+Then, we move to multiple linear regression. Unlike the previous section, in this session, we are not fitting one best model for each brand category. Instead, we only select a model that fits best across all categories. 
+
+```{r,warning=FALSE,message=FALSE}
+fit<-lm(Regard_MS~Virtuous+Personable+Classic+Basic+Sophisticated+Hip+Durable+Haughty, data=factor_data)
+library(knitr)
+kable(summary(fit)$coef, digits=4)
+
+#To get coefficient estimates, and P-value
+tidy(fit) 
+
+#To check the adjusted Rsuqare
+model_stat<-glance(fit)
+Adj_R<-model_stat$adj.r.squared
+AIC<-model_stat$AIC
+
+```
+
+We can see that except for "Hip"", all other covariates are highly significant. In addition, the adjusted R-square is `r Adj_R`, which is satisfactory. Here we use adjusted R square rather than R square, because we think it is more reliable, given that it also takes into consideration the number of parameters in the model. 
+
+Since "Hip" is insignificant. We re-fit a model without this covariate and check whether our model becomes better. 
+
+```{r,warning=FALSE,message=FALSE}
+fit1<-lm(Regard_MS~Virtuous+Personable+Classic+Basic+Sophisticated+Durable+Haughty, data=factor_data)
+tidy(fit1)
+model_stat1<-glance(fit1)
+Adj_R1<-model_stat1$adj.r.squared
+AIC1<-model_stat1$AIC
+Residual<-resid(fit1)
+Predicted<-fitted(fit1)
+
+#Display the results in table
+
+results<-data_frame(Model = "Multiple linear regression with 8 Predictors", Adjusted_R_square=Adj_R, AIC=AIC)
+bind_results<-bind_rows(results,
+                          data_frame(Model="Multiple linear regression with 7 Predictors",  
+                                     Adjusted_R_square=Adj_R1, AIC=AIC1 ))
+
+bind_results%>%kable
+
+```
+
+
+This time, all covariates are highly significant. Adjusted R square is `r Adj_R1` and AIC is `r AIC1`.
+We find that both AIC and Adjusted R square do not differ much in these two models. AIC prefer the Model after removing "Hip", while Adjusted R square favors model with 8 predictors slightly. Given that the "hip" term is insignificant in the first model and those two model fit measurements are very close to each other, I proceed with the simpler model.
+
+We can check the residual plot of this model to further assess the fit.
+
+
+```{r,warning=FALSE,message=FALSE}
+#Histogram
+binded<-cbind(factor_data,Residual,Predicted)
+ggplot(binded,aes(x=Residual,fill=..count..))+ geom_histogram(binwidth=0.15)+
+  scale_fill_gradient(low = "green", high = "red")+ggtitle("Residual histogram")
+
+
+#QQ plot
+ggplot(binded, aes(sample=Residual))+stat_qq(color="red")+ggtitle("Residual QQ plot")
+
+```
+
+We can see from histogram and QQ plot that the residuals are roughly normally distributed. We also check the residual vs. predicted plot.
+
+```{r,warning=FALSE,message=FALSE}
+binded%>%ggplot(aes(y=Residual,x=Predicted))+geom_point(shape=17,color="blue")+geom_hline(yintercept=0)+
+  ggtitle("Residual vs. predicted")
+
+```
+
+We cannot observe any obvious trend or pattern of residuals. The residuals are randomly distributed around 0.
+According to the above diagnosis, we think our model fits data well, and the model with "Virtuous","Personable","Classic","Basic","Sophisticated","Durable" and "Haughty" is our final model.
+
+
+#####4.2.3.2 Lasso Regression variable selection
+
+Here we use the glmnet package in R to do the Lasso regression. In particular, we first get an overview of the effect of tuning parameter on estimates. Then we use cv.glmnet to do cross-validation parameter selection. 
+
+```{r,warning=FALSE,message=FALSE,fig.width=12}
+library(glmnet)
+penalize_reg_data<-factor_data%>%select(-Category)
+x<-model.matrix(Regard_MS~.-1,data=penalize_reg_data)
+y<-penalize_reg_data$Regard_MS
+#We specify alpha=1 for LASSO regression, and alpha=0 for Ridge Regression
+fit.lasso<-glmnet(x,y,alpha=1)
+#Cross-validation for choosing parameter
+cv.lasso<-cv.glmnet(x,y)
+
+#Making the plots
+par(mfrow=c(1,2))
+plot(fit.lasso,xvar="lambda",label=TRUE)
+# We want to move title upwards in order to remove overlap with top line of graph
+title("LASSO coefficients vs.log lambda", line = 2.5)
+
+
+plot(cv.lasso)
+title("LASSO Cross-Validation MSE vs.log lambda", line = 2.5)
+
+#get the best lambda
+lambda_we_choose<-cv.lasso$lambda.1se
+
+```
+
+The left plot shows coefficients of each covariate as a function of log of lambda. The top line of the graph indicates how many covariates is still kept in the model when lambda is taken to be the corresponding value in the bottom x-axis. When log of lambda is slightly greater than -1, all coefficients are essentially 0. When lambda is relaxed, the coefficients grow away from zero in a nice smooth way, and the sum of absolute value of the coefficients is getting bigger and bigger until we reach a point where lambda is effectively zero, and the coefficients are unregularized.
+
+The figure on the right shows that When log lambda is -1 (max of x-axis), the mean squared error is very high, and the coefficients are restricted to be too small, and then at some point, it kind of levels off. There's two vertical lines in this plot, the first reference line is he one is at the minimum, and the other vertical line is within one standard error of the minimum. We prefer to go for lambda as indicated by the second vertical line, since it is a slightly more restricted model that does almost as well as the minimum. According to the output, this lambda is `r lambda_we_choose`.  
+
+Finally, we use the best tuning parameter that cross-validation gives us to perform Variable selection with LASSO method and get the coefficient estimates of the selected model:
+
+
+```{r,warning=FALSE,message=FALSE}
+lasso_estimate<-coef(cv.lasso)
+lasso_estimate
+
+```
+
+The output above has 7 non-zero coefficients (Hip's coefficient is restricted to 0). This indicates that the best model selected by "Lasso" is the same as that selected by the previous "backward approach", despite the fact that the coefficient estimates are slightly different.  
+
+```{r,warning=FALSE,message=FALSE}
+#We delete the 7th element of the vector since the "Hip" term's coefficient has been shrunk to zero and Hip
+lasso_column<-data.frame(coef(cv.lasso)[,1])
+lasso_out<-add_rownames(lasso_column, "term")
+colnames(lasso_out)[2]<-"Lasso_estimate"
+#Then we can join the coefficient estimates of the multiple regression results
+multi_reg<-tidy(fit1)%>%select(term,estimate)%>%rename(Multi_reg_estimate=estimate)
+compare<-multi_reg%>%left_join(lasso_out,by="term")
+#Show results
+compare%>%kable
+
+```
+
+What we see is just as expected. Since Lasso shrink the absolute value of parameter estimates, we can see that the absolute value of Lasso estimate is always smaller for that of reguler least square estimates of unregularized multiple regression model, except for the intercept term (LASSO is not regularizing the intercept term).
+
+
+####4.2.4 Final model interpretation
+Both backward elimination and LASSO select the same model. We interpret this model as follows:
+For Virtuous, Personable, Classic, Basic value and Sophisticated, the higher value is associated with higher customer perception, while for Durable and Haughty, lower value is associated with higher customer's perception. All of this makes sense for us except for "Durable". Normally, we expect the more durable, the better reputation, but this model gives us a contradictory result. However, when we look at the coefficient we can see that even though the estimate is negative, the absolute magnitude is very small, only 0.008, so it might be due to some potential confounders that we are not able to model here that affects our final result.
+
+
+###4.3 Regression Analysis based on brand's age (Secondary data source)
+
+Among variables in the secondary data source, what interests us most are the "Age" variable. Age is the time in years from the brand's launch to August 1st 2010, which measures the actual age of the brand. We think the "age" of a brand  plays a role in affecting brand's position and consumer's perception about the brand. If a brand has a long age, customer may think it is more reliable and tend to regard that brand highly. On the other hand, there is also a possibility that customer have a feel of old-fashioned or lose of freshness because of the long age of a brand, hence does not regard the brand that high. Therefore, it raise the question about how would age affect customer's perception about the brand. In this part, we are going to examine the relationship between brand "age" and consumer's perception.
+
+```{r,message=FALSE,warning=FALSE,fig.width=12}
+newdata%>%
+  filter(Regard_MS!= 0)%>%
+  ggplot(aes(x=Age,y=Regard_MS))+
+  geom_point(aes(color=Category))+
+  ggtitle("Regard_MS vs. brand Age")
+
+```
+
+Looking at the plots above, we can somehow see that there is an increasing trend between age and regard_ms. However, to see if the trend actually exist more clearly, we can divide our plot into categories (Account for possible confounding effect).
+
+
+```{r,message=FALSE,warning=FALSE,fig.width=12}
+newdata%>%
+  filter(Regard_MS!= 0)%>%
+  ggplot(aes(x=Age,y=Regard_MS))+
+  geom_point()+
+  facet_wrap(~Category)+
+  geom_smooth(method="lm")+
+  ggtitle("Regard_MS vs. brand Age by category")
+
+```
+
+After dividing into categories, we can the increasing pattern between age and regard MS in each category more clearly. Especially for Cars, we see that there is a highly significant relationship as the confidence interval is pretty small. To more formally assess this, we run the linear regression between age and regard MS. In the following categories, the impact of age on customer's perception is statistically significant. 
+
+```{r,message=FALSE,warning=FALSE}
+library(broom)
+fit_age_Regard<-newdata%>%
+  filter(Regard_MS!= 0)%>%
+  group_by(Category)%>%
+  do(tidy(lm(Regard_MS ~ Age, data=.)))
+table1<-fit_age_Regard%>%
+  filter(term=="Age")%>%
+  filter(p.value<=0.05)%>%
+  select(Category, estimate, p.value)
+table1
+```
+
+Although we know that the impact of age on consumer's perception in those categories is statistically significant, we should also notice that the impact magnitude is pretty small.
+
+
+###4.4 Brief summary of regression results on consumers' perception
+ 
+According to section 4.1-4.3, we find that consumers' perception is associated with many brand characteristics, including age, several attributes of brand image and some features from survey data. Also, even though different categories share some characters in common, the association is usually inconsistent across brand categories, so we are not able to provide an apply-to-all model here. What we suggest is that companies should find which characters are significant predictors of Regard_MS in their respective category, rather than blindly follow other successful companies' marketing strategy.
+
+
+
+##5. Regression analysis on the secondary outcome (Usage)
+
+In our dataset, the brand's usage is denoted by Total_Users_pct.
+
+Like in section 4.3, we are also going to analyze how, if any, are the brand's age associated with a brand's usage. Here, in addition to age, we also use "Newness" as an independent variable, which measures the time in years from the launch of the first brand of its type to the brand's launch (Relative age with respect to brand category). For example, Amazon is the first brand in their category, thus its newness value equals to zero. In other words, newness measures the "freshness" of a brand.
+
+###5.1 Use brand age as predictor
+
+Now let's explore the association between brand age and consumer's actual usage of a brand.
+
+```{r,message=FALSE,warning=FALSE,fig.width=12}
+newdata%>%
+  ggplot(aes(x=Age,y=Total_Users_pct))+
+  geom_point(aes(color=Category))+
+  ggtitle("Usage vs. brand Age")
+
+```
+
+Seeing from the plots above, we didn't see a very clear pattern as the dots look randomly distributed. To further confirm, we separate the points into categories just as we did before.
+
+```{r,message=FALSE,warning=FALSE,fig.width=12}
+newdata%>%
+  ggplot(aes(x=Age,y=Total_Users_pct))+
+  geom_point()+
+  facet_wrap(~Category)+
+  geom_smooth(method="lm")+
+  ggtitle("Usage vs. brand Age by category")
+
+```
+
+Looking at those plots, we see that the patterns between age and actual usage varies a lot. For some categories like beauty products, food and dinning, and technology products and stores, we see there is an increasing pattern between age and actual usage. Telecommunications also show an increasing pattern, but it might be the result of an influential outlier. For home design and decoration, we see there is a decreasing pattern between age and actual usage, and for Travel services we barely see a trend between age and actual usage. 
+
+To formally assess the influence of age on actual usage, we run a linear regression in each category and the statistically significant results are presented as follows:
+
+```{r,message=FALSE,warning=FALSE}
+fit_age_usage<-newdata%>%
+  group_by(Category)%>%
+  do(tidy(lm(Total_Users_pct~ Age, data=.)))
+table2<-fit_age_usage%>%
+  filter(term=="Age")%>%
+  filter(p.value<=0.05)%>%
+  select(Category, estimate, p.value)
+table2
+```
+
+See that the impact is more significant here than in predicting consumer's perception (Analysis in 4.3). Hence, age might be a good predictor for people's actual usage of a brand. 
+
+###5.2 Use brand newness as predictor
+
+Now let's explore how Newness would affect people's usage. We are only interested in those brand which has newness score less than 200 (there is only a very small portion of brands that has newness score larger than 200). We also analyze by brand category.
+
+
+```{r,message=FALSE,warning=FALSE,fig.width=12}
+newdata%>%
+  filter(Newness<=200)%>%
+  ggplot(aes(x=Newness,y=Total_Users_pct))+
+  geom_point()+
+  facet_wrap(~Category)+
+  geom_smooth(method="lm")+
+  ggtitle("Usage vs. brand Newness by category")
+
+```
+
+Seeing from the plots, we observe a negative trend between newness and usage in food and dining, clothing products, travel services and cars. In order to test whether those the significance of Newness variable, we did linear regression between newness and usage in each category. The impact of newness on usage is statistically significant in the following categories.
+
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+fit_newess_usage<-newdata%>%
+  filter(Newness<=200)%>%
+  group_by(Category)%>%
+  do(tidy(lm(Total_Users_pct~ Newness, data=.)))
+table4<-fit_newess_usage%>%
+  filter(term=="Newness")%>%
+  filter(p.value<=0.05)%>%
+  select(Category, estimate, p.value)
+table4
+```
+
+We see that the coefficient estimates are negative for food and dining as well as media and entertainment. 
+ 
+Interestingly, the coefficient for travel service is also negative and statistically significant. Notice that the brands in travel services includes different airlines and train lines. Importantly, we know that people's usage of travel services rely more on other attributes like safeness or punctuality rate, instead of newness. Since our data set lack those specific attributes of travel services, we are unable to adjust for those attributes. That might be an explanation for the seemingly strange result of travel services. 
+
+###5.3 Brief summary of regression results on brand usage 
+
+From analysis in section 5.1 and 5.2, we have an interesting observation: "newness" regression and "age" regression filter out different brand categories (Only 1 overlap: Food and dining). That means for some brand category, absolute age is an important predictor for usage, but relative age is not, and vice versa. That is equivalent to say, whether a brand's absolute age or relative newness is a significant predictor of usage or not depend on the brand category. We planned to see which of "age" and "newness" are more significant predictors of usage, as stated in our objectives. However, this question does not have a general answer based on our previous analysis, since the significance condition varies by category. 
+
+
+##6. Prediction
+
+###6.1 Using machine learning techniques to predict Rgard_MS (Primary outcome)
+
+In previous analysis, we only used a selection of features for model interpretation purpose. Indeed, our dataset contains more than 100 features here, we naturally come to the idea of predicting the overall Rgard_MS value of these brands based on value of our features.
+
+
+
+####6.1.1 More data wrangling for machine learning purpose
+
+First, we need to do some pruning on our dataset. As we mentioned earlier, there is a data point with Rgard_MS value being 1, we think there might be a data entry error. Thus, we change that 0 point to "NA" to avoid potentially influential results on our further analysis.
+
+```{r,warning=FALSE,message=FALSE}
+origindata<-newdata%>%mutate(Regard_MS=ifelse(Regard_MS==0,NA,Regard_MS))
+
+```
+
+We also need to transform Category, Type of Good, Premium and Product into one-hot encoding.
+
+```{r,warning=FALSE,message=FALSE}
+#Type of Good
+origindata<-origindata%>%mutate(Type_Experince=ifelse(`Type of good`=="Experience",1,0),Type_Search=ifelse(`Type of good`=="Search",1,0),Type_Credence=ifelse(`Type of good`=="Credence",1,0))%>%select(-`Type of good`)
+
+#Premium
+origindata<-origindata%>%mutate(Pre_Value=ifelse(Premium=="Value",1,0),Pre_Middle=ifelse(Premium=="Middle",1,0),Pre_Premium=ifelse(Premium=="Premium",1,0))%>%select(-Premium)
+
+
+#Product
+origindata<-origindata%>%mutate(Pro_Product=ifelse(Product=="Product",1,0),Pro_Service=ifelse(Product=="Service",1,0),Pro_Mix=ifelse(Product=="Mix",1,0))%>%select(-Product)
+
+#Category
+origindata<-origindata%>%mutate(CatCode=as.factor(CatCode))
+Cat<-origindata$CatCode
+CatMat<-data.frame(model.matrix(~Cat-1))
+origindata<-cbind(origindata,CatMat)
+```
+
+Then we remove the Brand ids, brand names, categories as well as category codes.
+
+
+```{r,warning=FALSE,message=FALSE}
+mldata<-origindata%>%select(Internet:Cat16)
+
+```
+
+We find that there many NAs. We fill NAs with medians. We use median as it is more robust than mean in Missing at Random situation.
+
+```{r,warning=FALSE,message=FALSE}
+newmldata <- lapply(mldata,function(y) y = ifelse(is.na(y), median(y, na.rm=TRUE), y))
+newmldata<-data.frame(newmldata)
+
+```
+
+####6.1.2 Train and test set
+
+```{r,warning=FALSE,message=FALSE}
+set.seed(755)
+n_test <- round(nrow(newmldata) / 10)
+test_indices <- sample(1:nrow(newmldata), n_test, replace=FALSE)
+test <- newmldata[test_indices,]
+train <- newmldata[-test_indices,]
+
+```
+
+####6.1.3 Evaluation metric
+To evaluate the accuracy of our prediction, we write a function called `RMSE()` that takes two numeric vectors (one corresponding to the true Rgard_MS, and one corresponding to predicted Regard_MS) as input, and returns the root mean square error (RMSE) between the two as output. The definition of root mean square error is square root of the 
+average of the residuals squared:
+
+$$\mbox{RMSE} = \sqrt{\frac{1}{N}\sum_{i=1}^N (\hat{Y}_i - Y_i)^2}$$
+
+where $Y_i$ is the true $i$-th Regard_MS and 
+$\hat{Y}_i$ our predicted Regard_MS. We can interpret this similarly to a standard deviation.
+
+
+```{r,warning=FALSE,message=FALSE}
+
+RMSE <- function(true, predicted){
+    sqrt(mean((true - predicted)^2))
+}
+
+```
+
+##### 6.1.4 Model fitting and prediction
+Our goal here is to fit a model using the `train` data that we can use to predict the overall score in the `test` data.
+
+* ##### Method 1: Naive model
+To begin, let's fit the simplest possible model: suppose we decided to do no statistical work at all and simply predict every score to be the average score in the training set. 
+
+
+```{r,warning=FALSE,message=FALSE}
+mean<-mean(train$Regard_MS)
+naive_predict<-rep(mean,70)
+naive_rmse<-RMSE(test$Regard_MS,naive_predict)
+rmse_results <- data_frame(method = "Just the average", RMSE = naive_rmse)
+```
+
+
+* ##### Method 2: Linear regression
+Then, we turn to linear regression. We regard all features as predictors and regress Regard_MS against them.
+
+```{r,warning=FALSE,message=FALSE}
+lm<-lm(Regard_MS~ .,data=train)
+lm_predict<-predict(lm,test)
+lm_rmse<-RMSE(test$Regard_MS,lm_predict)
+
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Linear Regression",  
+                                   RMSE =lm_rmse ))
+rmse_results %>% kable
+
+```
+
+* ##### Method 3: Random forest
+
+Then we turn into random forest. There is only one parameter in random forest, i.e., number of trees. We use 10 cross validation to choose the best parameter.
+
+
+```{r,warning=FALSE,message=FALSE}
+library(randomForest)
+library(caret)
+notree<-c(10,20,50,100,1000)
+set.seed(21)
+rf_rmse_try<-vector()
+for(no in notree){
+  rmse<-vector()
+  for (i in seq(1,10)){
+    inTrain<-createDataPartition(y=train$Regard_MS)
+    train_set<-slice(train,inTrain$Resample1)
+    test_set<-slice(train,-inTrain$Resample1)
+    rf_fit<-randomForest(Regard_MS~ ., data=train_set,ntree=no)
+    rf_predict<-predict(rf_fit, test_set)
+    rmse<-c(rmse,RMSE(test_set$Regard_MS,rf_predict))
+  }
+  rf_rmse_try<-c(rf_rmse_try,mean(rmse))
+} 
+
+rf_result<-data.frame(notree=as.factor(notree),rmse=rf_rmse_try)
+rf_result%>%ggplot(aes(x=notree, y=rmse))+geom_point()+ggtitle("Random forest RMSE vs. notree")
+
+```
+
+As we can see, when number of trees=1000, the RMSE reaches the minimum, so we choose 1000 trees, and make predictions for the test set. 
+
+```{r,warning=FALSE,message=FALSE}
+rf<-randomForest(Regard_MS~ . , data=train, ntree=1000)
+rf_predict<-predict(rf,test)
+rf_rmse<-RMSE(test$Regard_MS,rf_predict)
+
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Random Forest",  
+                                   RMSE =rf_rmse))
+
+rmse_results%>%kable
+
+```
+The random forest method does not seem to improve the RMSE a lot.
+
+* ##### Method 4: Support vector machine
+
+We then tried support vector machine algorithm. There are mainly two parameters we want to adjust in the model, namely cost and gamma.
+
+First, we want to find the optimal cost. So we fixed gamma and experiment with different cost. We still use 10 cross validation.
+
+```{r,warning=FALSE,message=FALSE}
+library(e1071)
+nocost<-c(1,10,100,500,1000)
+set.seed(401)
+svm_rmse_try<-vector()
+for(no in nocost){
+  rmse<-vector()
+  for (i in seq(1,10)){
+    inTrain<-createDataPartition(y=train$Regard_MS)
+    train_set<-slice(train,inTrain$Resample1)
+    test_set<-slice(train,-inTrain$Resample1)
+    
+    svm_fit<-svm(Regard_MS~ ., data=train_set,cost=no)
+    svm_predict<-predict(svm_fit, test_set)
+    rmse<-c(rmse,RMSE(test_set$Regard_MS,svm_predict))
+  }
+  svm_rmse_try<-c(svm_rmse_try,mean(rmse))
+} 
+
+
+svm_cost_result<-data.frame(nocost=as.factor(nocost),rmse=svm_rmse_try)
+svm_cost_result%>%ggplot(aes(x=nocost, y=rmse))+geom_point()+ggtitle("SVM RMSE vs. nocost")
+
+```
+
+As we can see, when cost=500, the RMSE reaches the minimum. So we fix cost = 500, and adjust for gamma.
+
+```{r,warning=FALSE,message=FALSE}
+nogamma<-c(1,0.1,0.01,0.001,0.0001)
+set.seed(5)
+svm_rmse_try<-vector()
+for(no in nogamma){
+  rmse<-vector()
+  for (i in seq(1,10)){
+    inTrain<-createDataPartition(y=train$Regard_MS)
+    train_set<-slice(train,inTrain$Resample1)
+    test_set<-slice(train,-inTrain$Resample1)
+    
+    svm_fit<-svm(Regard_MS~ ., data=train_set,cost=500,gamma=no)
+    svm_predict<-predict(svm_fit, test_set)
+    rmse<-c(rmse,RMSE(test_set$Regard_MS,svm_predict))
+  }
+  svm_rmse_try<-c(svm_rmse_try,mean(rmse))
+} 
+
+
+svm_gamma_result<-data.frame(nogamma=as.factor(nogamma),rmse=svm_rmse_try)
+svm_gamma_result%>%ggplot(aes(x=nogamma, y=rmse))+geom_point()+ggtitle("SVM RMSE vs. nogamma")
+
+
+```
+
+When gamma=0.0001, the RMSE reaches the minimum. So we use cost= 500 and gamma=0.0001 and make predictions for test set.
+
+```{r,warning=FALSE,message=FALSE}
+svm<-svm(Regard_MS~ . , data=train, cost=500,gamma=0.0001)
+svm_predict<-predict(svm,test)
+svm_rmse<-RMSE(test$Regard_MS,svm_predict)
+
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Support Vector Machine",  
+                                   RMSE =svm_rmse))
+
+rmse_results%>%kable
+
+```
+
+##### 6.1.5 Conclusion from prediction results
+
+Among these 4 Methods, linear regression is the best one, since it has the smallest RMSE value. The SVM's result is slightly larger than Linear Regression, and the performance is acceptable. We also notice that Naive model has a really large RMSE compared to other models, which is consistent to our common sense. In fact, it is not surprising to find that Linear Regression provides the best model for our data. Recall in section 4.1 where we make univariate plots for Regard_MS vs. various features, we found that the linear fit captures the trend quite well.
+
+
+###6.2 Using machine learning techniques to classify brand category
+
+Since many of our analysis of brands are based on category and we noticed that in different categories, these features are significantly different. So we should be able to classify these brands by these features using machine learning classification techniques. 
+
+####6.2.1 More data wrangling for classification purpose
+
+Like before, we also need to perform some manipulation of our dataset.
+
+```{r,warning=FALSE,message=FALSE}
+classdata<-newdata%>%mutate(Regard_MS=ifelse(Regard_MS==0,NA,Regard_MS))
+#Type of Good
+classdata<-classdata%>%mutate(Type_Experince=ifelse(`Type of good`=="Experience",1,0),Type_Search=ifelse(`Type of good`=="Search",1,0),Type_Credence=ifelse(`Type of good`=="Credence",1,0))%>%select(-`Type of good`)
+
+#Premium
+classdata<-classdata%>%mutate(Pre_Value=ifelse(Premium=="Value",1,0),Pre_Middle=ifelse(Premium=="Middle",1,0),Pre_Premium=ifelse(Premium=="Premium",1,0))%>%select(-Premium)
+
+
+#Product
+classdata<-classdata%>%mutate(Pro_Product=ifelse(Product=="Product",1,0),Pro_Service=ifelse(Product=="Service",1,0),Pro_Mix=ifelse(Product=="Mix",1,0))%>%select(-Product)
+
+#We remove the Brand ids , brand names categories as before, but We also remove Involvement as it is measured at the category level and has a perfect correlation with the "category" variable.
+classmldata<-classdata%>%select(CatCode:Satisfaction,Familiarity:Pro_Mix)
+
+```
+
+We also fill NAs with medians
+
+```{r,warning=FALSE,message=FALSE}
+classmldata <- lapply(classmldata,function(y) y = ifelse(is.na(y), median(y, na.rm=TRUE), y))
+classmldata<-data.frame(classmldata)
+classmldata<-classmldata%>%mutate(CatCode=as.factor(CatCode))
+```
+
+####6.2.2 Train and test set
+
+```{r,warning=FALSE,message=FALSE}
+set.seed(275)
+n_test <- round(nrow(classmldata) / 10)
+test_indices <- sample(1:nrow(classmldata), n_test, replace=FALSE)
+test <- classmldata[test_indices,]
+train <- classmldata[-test_indices,]
+
+```
+
+####6.2.3 Evaluation metric
+The evaluation metric for this classification is categorization accuracy. That is, the percentage of the test brands that are correctly classified. The formula is:
+
+$$\text{Classification Accuracy}=\frac{\text{Number Correctly Classified Examples}}{\text{Total Number of Examples}}$$
+
+
+##### 6.2.4 Model fitting and classification
+
+* ##### Method 1: GLM: Multinomial logistic Regression
+As logistic regression cannot accept too many features, we manually pick up some features of interest, namely age, newness, familiarity, complexity, visibility, perceived risk, excitement and competence.
+
+```{r,warning=FALSE,message=FALSE}
+library(nnet)
+glm_fit<-multinom(CatCode~Age+Newness+Familiarity+Complexity+Visibility+Perceived_risk+Excitement+Competence, data= train)
+class_glm_predict<-predict(glm_fit,test)
+tab <- table(pred=class_glm_predict, truth=test$CatCode)
+glm_Accuracy<-confusionMatrix(tab)$overall["Accuracy"]
+Accuracy_results <- data_frame(method = "GLM:Logistic Regression", Accuracy = glm_Accuracy)
+Accuracy_results%>%kable
+
+```
+
+* ##### Method 2: K nearest neighbors
+Then we turn to k nearest neighbors. There is only one parameter in KNN model, k. We use 10 cross validation to choose the best k.
+
+```{r,warning=FALSE,message=FALSE}
+set.seed(123)
+control <- trainControl(method='cv', number=10, p=.8)
+knn_k_result <- train(as.factor(CatCode) ~ .,
+             data = train,
+             method = "knn",
+             trControl = control,
+             tuneGrid=data.frame(k=seq(1,10,1)),
+             metric="Accuracy")
+
+knn_k_result%>%ggplot(aes(x=as.factor(k),y=Accuracy))+geom_point()+ggtitle("KNN Accuracy vs. k")
+
+```
+
+When k=1, the accuracy reaches the maximum. So we use k=1 and make predictions for the test set.
+
+
+```{r,warning=FALSE,message=FALSE}
+
+class_knn_predict<-knn3Train(train[,-1],test[,-1],train[,1],k=1)
+tab <- table(pred=class_knn_predict, truth=test$CatCode)
+knn_Accuracy<-mean(ifelse(class_knn_predict==test$CatCode,1,0))
+Accuracy_results <- bind_rows(Accuracy_results,
+                          data_frame(method="K Nearest Neighbours",  
+                                   Accuracy =knn_Accuracy))
+
+Accuracy_results%>%kable
+
+```
+
+* ##### Method 3: Random forest
+There is only one parameter in random forest, i.e., number of trees. We also use 10 cross validation to choose the best parameter.
+
+```{r,warning=FALSE,message=FALSE}
+
+notree<-c(10,20,50,100,1000)
+set.seed(1212)
+rf_accuracy_try<-vector()
+for(no in notree){
+  accuracy<-vector()
+  for (i in seq(1,10)){
+    inTrain<-createDataPartition(y=train$CatCode)
+    train_set<-slice(train,inTrain$Resample1)
+    test_set<-slice(train,-inTrain$Resample1)
+    
+    rf_fit<-randomForest(CatCode~ ., data=train_set,ntree=no)
+    rf_predict<-predict(rf_fit, test_set)
+    
+    accuracy<-c(accuracy,mean(ifelse(rf_predict==test_set$CatCode,1,0)))
+  }
+  rf_accuracy_try<-c(rf_accuracy_try,mean(accuracy))
+} 
+
+rf_result<-data.frame(notree=as.factor(notree),Accuracy=rf_accuracy_try)
+rf_result%>%ggplot(aes(x=notree, y=Accuracy))+geom_point()+ggtitle("Random forest accuracy vs. notree")
+
+```
+When number of trees=1000, the accuracy reaches the maximum. So we use 1000 trees and make predictions for the test set.
+
+```{r,warning=FALSE,message=FALSE}
+set.seed(411)
+rf_fit<-randomForest(CatCode~ ., data=train, ntree=1000)
+class_rf_predict<-predict(rf_fit,test)
+tab <- table(pred=class_rf_predict, truth=test$CatCode)
+rf_Accuracy<-mean(ifelse(class_rf_predict==test$CatCode,1,0))
+Accuracy_results <- bind_rows(Accuracy_results,
+                          data_frame(method="Random Forest",  
+                                   Accuracy =rf_Accuracy))
+
+Accuracy_results%>%kable
+
+```
+
+* ##### Method 4: Support vector machine
+
+Then we tried support vector machine classifier. There are mainly two parameters we want to adjust in the model, namely cost and gamma.
+
+First, we want to find the optimal cost. So we fixed gamma and experience with different cost. We still use 10 cross validation.
+
+```{r,warning=FALSE,message=FALSE}
+library(e1071)
+
+nocost<-c(1,10,100,500,1000)
+
+set.seed(400)
+svm_accuracy_try<-vector()
+for(no in nocost){
+  accuracy<-vector()
+  for (i in seq(1,10)){
+    inTrain<-createDataPartition(y=train$CatCode)
+    train_set<-slice(train,inTrain$Resample1)
+    test_set<-slice(train,-inTrain$Resample1)
+    
+    svm_fit<-svm(CatCode~ ., data=train_set,cost=no)
+    svm_predict<-predict(svm_fit, test_set)
+    accuracy<-c(accuracy,mean(ifelse(svm_predict==test_set$CatCode,1,0)))
+  }
+  svm_accuracy_try<-c(svm_accuracy_try,mean(accuracy))
+} 
+
+svm_cost_result<-data.frame(nocost=as.factor(nocost),Accuracy=svm_accuracy_try)
+svm_cost_result%>%ggplot(aes(x=nocost, y=Accuracy))+geom_point()+ggtitle("SVM accuracy vs. nocost")
+
+```
+
+As we can see, when cost=100, the accuracy reaches the maximum. So we fix cost = 100, and adjust for gamma.
+
+
+```{r,warning=FALSE,message=FALSE}
+
+nogamma<-c(1,0.1,0.01,0.001,0.0001)
+set.seed(50)
+svm_accuracy_try<-vector()
+for(no in nogamma){
+  accuracy<-vector()
+  for (i in seq(1,10)){
+    inTrain<-createDataPartition(y=train$CatCode)
+    train_set<-slice(train,inTrain$Resample1)
+    test_set<-slice(train,-inTrain$Resample1)
+    svm_fit<-svm(CatCode~ ., data=train_set,cost=100,gamma=no)
+    svm_predict<-predict(svm_fit, test_set)
+    accuracy<-c(accuracy,mean(ifelse(svm_predict==test_set$CatCode,1,0)))
+  }
+  svm_accuracy_try<-c(svm_accuracy_try,mean(accuracy))
+} 
+
+
+svm_gamma_result<-data.frame(nogamma=as.factor(nogamma),Accuracy=svm_accuracy_try)
+svm_gamma_result%>%ggplot(aes(x=nogamma, y=Accuracy))+geom_point()+ggtitle("SVM Accuracy vs.nogamma")
+
+```
+
+When gamma=0.0001, the RMSE reaches the maximum. So we use cost=100 and gamma=0.0001 and make predictions for test set.
+
+```{r,warning=FALSE,message=FALSE}
+
+svm_fit<-svm(CatCode~ ., data=train, cost=100, gamma=0.0001)
+class_svm_predict<-predict(svm_fit,test)
+tab <- table(pred=class_svm_predict, truth=test$CatCode)
+svm_Accuracy<-mean(ifelse(class_svm_predict==test$CatCode,1,0))
+Accuracy_results <- bind_rows(Accuracy_results,
+                          data_frame(method="Support Vector Machine",  
+                                   Accuracy =svm_Accuracy))
+
+
+Accuracy_results%>%kable
+
+```
+
+* ##### Method 5: PCA with K nearest neighbor
+
+```{r,warning=FALSE,message=FALSE}
+pcadata<-classmldata%>%select(-CatCode)
+# Find principal component
+pc<-prcomp(pcadata)
+newclassmldata<-data.frame(CatCode=as.factor(classmldata$CatCode),pc$x[,1:30])
+set.seed(275)
+n_test <- round(nrow(newclassmldata) / 10)
+test_indices <- sample(1:nrow(newclassmldata), n_test, replace=FALSE)
+test <- newclassmldata[test_indices,]
+train <- newclassmldata[-test_indices,]
+
+```
+We find that when we use first 30 (out of more than 100 features) principal components, most of the variability can be accounted for, so we would not bother with more dimensions.
+
+```{r,warning=FALSE,message=FALSE}
+set.seed(1234)
+control <- trainControl(method='cv', number=10, p=.8)
+knn_k_result <- train(as.factor(CatCode) ~ .,
+             data = train,
+             method = "knn",
+             trControl = control,
+             tuneGrid=data.frame(k=seq(1,10,1)),
+             metric="Accuracy")
+
+knn_k_result%>%ggplot(aes(x=as.factor(k),y=Accuracy))+geom_point()+ggtitle("KNN Accuracy vs. K")
+
+```
+
+When k=1, the accuracy reaches the maximum. So we use k=1 and make predictions for the test set.
+
+```{r,warning=FALSE,message=FALSE}
+class_knn_predict<-knn3Train(train[,-1],test[,-1],train[,1],k=1)
+tab <- table(pred=class_knn_predict, truth=test$CatCode)
+knn_Accuracy<-mean(ifelse(class_knn_predict==test$CatCode,1,0))
+Accuracy_results <- bind_rows(Accuracy_results,
+                          data_frame(method="K Nearest Neighbours with PCA",  
+                                   Accuracy =knn_Accuracy))
+Accuracy_results%>%kable
+
+```
+
+##### 6.2.5 Conclusion from classification results
+
+Based on the accuracy metrics, we find that "Random forest" and "SVM" work best. The accuracy reach 80%. Note that we are classifying into 16 categories, so we think the accuracy of 80% is satisfactory. Also, we find that "KNN" and "KNN with first 30 PCs" have the same classification accuracy, which indicates we don't need to bother with all features in this case. 
+
+
+# Reference
+1. Ramakrishnan Ramachandran (2015) Super Brands (Working paper). [here](http://dx.doi.org/10.13140/RG.2.1.1288.1449) 
+
+2. Mitchell Lovett, Renana Peres, Ron Shachar (2014) A Data Set of Brands and Their Characteristics. Marketing Science
+33(4):609-617. [here](http://dx.doi.org/10.1287/mksc.2014.0861)
+
+3. Natalie Mizik and Robert Jacobson (2008) The Financial Value Impact of Perceptual Brand Attributes. Journal of Marketing Research: February 2008, Vol. 45, No. 1, pp. 15-32. [here](http://dx.doi.org/10.1509/jmkr.45.1.15)
+
+
+
+
+
+
