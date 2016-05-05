@@ -4,5 +4,5 @@ BIO260 Project:Insights on brand in marketing. (By Huiru Tao, Zhuyun Xiao, Yueji
 
 This repository includes:
 1. Rmarkdown file including all codes and analysis.
-2. Knited html file.
+2. Html file.
 3. Our data (two xlsl file).
